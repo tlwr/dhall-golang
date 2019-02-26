@@ -2,6 +2,7 @@ package main_test
 
 import (
 	"bytes"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -90,26 +91,31 @@ func expectEqual(t *testing.T, expected, actual interface{}) {
 	}
 }
 
-func TestParserRejects(t *testing.T) {
-	failuresDir := "./dhall-lang/tests/parser/failure/"
-	files, err := ioutil.ReadDir(failuresDir)
+func runTestOnEachFile(t *testing.T, dir string, test func(*testing.T, io.Reader)) {
+	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("Couldn't read dhall-lang tests: %v\n(Have you pulled submodules?)\n", err)
 	}
 
 	for _, f := range files {
 		t.Run(f.Name(), func(t *testing.T) {
-			reader, openerr := os.Open(failuresDir + f.Name())
+			reader, openerr := os.Open(dir + f.Name())
 			defer reader.Close()
 			if openerr != nil {
 				t.Fatal(openerr)
 			}
 
-			_, err := parser.ParseReader(f.Name(), reader)
-
-			expectError(t, err)
+			test(t, reader)
 		})
 	}
+}
+
+func TestParserRejects(t *testing.T) {
+	runTestOnEachFile(t, "./dhall-lang/tests/parser/failure/", func(t *testing.T, reader io.Reader) {
+		_, err := parser.ParseReader(t.Name(), reader)
+
+		expectError(t, err)
+	})
 }
 
 func TestParserAccepts(t *testing.T) {
@@ -156,32 +162,18 @@ func TestParserAccepts(t *testing.T) {
 }
 
 func TestTypecheckFails(t *testing.T) {
-	failuresDir := "./dhall-lang/tests/typecheck/failure/"
-	files, err := ioutil.ReadDir(failuresDir)
-	if err != nil {
-		t.Fatalf("Couldn't read dhall-lang tests: %v\n(Have you pulled submodules?)\n", err)
-	}
+	runTestOnEachFile(t, "./dhall-lang/tests/typecheck/failure/", func(t *testing.T, reader io.Reader) {
+		parsed, err := parser.ParseReader(t.Name(), reader)
 
-	for _, f := range files {
-		t.Run(f.Name(), func(t *testing.T) {
-			reader, openerr := os.Open(failuresDir + f.Name())
-			defer reader.Close()
-			if openerr != nil {
-				t.Fatal(openerr)
-			}
+		expectNoError(t, err)
 
-			parsed, err := parser.ParseReader(f.Name(), reader)
+		expr, ok := parsed.(ast.Expr)
+		if !ok {
+			failf(t, "Expected ast.Expr, got %+v\n", parsed)
+		}
 
-			expectNoError(t, err)
+		_, err = expr.TypeWith(ast.EmptyContext())
 
-			expr, ok := parsed.(ast.Expr)
-			if !ok {
-				failf(t, "Expected ast.Expr, got %+v\n", parsed)
-			}
-
-			_, err = expr.TypeWith(ast.EmptyContext())
-
-			expectError(t, err)
-		})
-	}
+		expectError(t, err)
+	})
 }
