@@ -120,26 +120,20 @@ func runTestOnEachFile(t *testing.T, dir string, test func(*testing.T, io.Reader
 	}
 }
 
-func TestParserRejects(t *testing.T) {
-	runTestOnEachFile(t, "./dhall-lang/tests/parser/failure/", func(t *testing.T, reader io.Reader) {
-		_, err := parser.ParseReader(t.Name(), reader)
-
-		expectError(t, err)
-	})
-}
-
-func TestParserAccepts(t *testing.T) {
-	successesDir := "./dhall-lang/tests/parser/success/"
-	files, err := filepath.Glob(successesDir + "*A.dhall")
+func runTestOnFilePairs(
+	t *testing.T,
+	dir string,
+	suffixA string,
+	suffixB string,
+	test func(*testing.T, io.Reader, io.Reader),
+) {
+	files, err := filepath.Glob(dir + "*" + suffixA)
 	if err != nil {
 		t.Fatalf("Couldn't read dhall-lang tests: %v\n(Have you pulled submodules?)\n", err)
 	}
-	var cbor codec.CborHandle
-	var json codec.JsonHandle
 
 	for _, aName := range files {
-		name := filepath.Base(aName)
-		bName := strings.Replace(aName, "A.dhall", "B.json", 1)
+		bName := strings.Replace(aName, suffixA, suffixB, 1)
 		aReader, err := os.Open(aName)
 		defer aReader.Close()
 		if err != nil {
@@ -150,9 +144,28 @@ func TestParserAccepts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Run(name, func(t *testing.T) {
+		t.Run(filepath.Base(aName), func(t *testing.T) {
+			test(t, aReader, bReader)
+		})
+	}
+}
+
+func TestParserRejects(t *testing.T) {
+	runTestOnEachFile(t, "./dhall-lang/tests/parser/failure/", func(t *testing.T, reader io.Reader) {
+		_, err := parser.ParseReader(t.Name(), reader)
+
+		expectError(t, err)
+	})
+}
+
+func TestParserAccepts(t *testing.T) {
+	var cbor codec.CborHandle
+	var json codec.JsonHandle
+	runTestOnFilePairs(t, "./dhall-lang/tests/parser/success/",
+		"A.dhall", "B.json",
+		func(t *testing.T, aReader, bReader io.Reader) {
 			buf := new(bytes.Buffer)
-			parsed, err := parser.ParseReader(name, aReader)
+			parsed, err := parser.ParseReader(t.Name(), aReader)
 			expectNoError(t, err)
 			aEnc := codec.NewEncoder(buf, &cbor)
 			err = aEnc.Encode(parsed)
@@ -168,7 +181,6 @@ func TestParserAccepts(t *testing.T) {
 			expectNoError(t, err)
 			expectEqual(t, expected, actual)
 		})
-	}
 }
 
 func TestTypecheckFails(t *testing.T) {
@@ -190,35 +202,17 @@ func TestTypecheckFails(t *testing.T) {
 
 func TestTypechecks(t *testing.T) {
 	// TODO: recurse through dir
-	dir := "./dhall-lang/tests/typecheck/success/"
-	files, err := filepath.Glob(dir + "*A.dhall")
-	if err != nil {
-		t.Fatalf("Couldn't read dhall-lang tests: %v\n(Have you pulled submodules?)\n", err)
-	}
-
-	for _, aName := range files {
-		name := filepath.Base(aName)
-		bName := strings.Replace(aName, "A.dhall", "B.dhall", 1)
-		aReader, err := os.Open(aName)
-		defer aReader.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		bReader, err := os.Open(bName)
-		defer bReader.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Run(name, func(t *testing.T) {
-			parsedA, err := parser.ParseReader(name, aReader)
+	runTestOnFilePairs(t, "./dhall-lang/tests/typecheck/success/",
+		"A.dhall", "B.dhall",
+		func(t *testing.T, aReader, bReader io.Reader) {
+			parsedA, err := parser.ParseReader(t.Name(), aReader)
 			expectNoError(t, err)
 
-			parsedB, err := parser.ParseReader(name, bReader)
+			parsedB, err := parser.ParseReader(t.Name(), bReader)
 			expectNoError(t, err)
 
 			typeOfA, err := parsedA.(ast.Expr).TypeWith(ast.EmptyContext())
 			expectNoError(t, err)
 			expectEqual(t, typeOfA, parsedB)
 		})
-	}
 }
