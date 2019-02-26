@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/philandstuff/dhall-golang/ast"
 	"github.com/philandstuff/dhall-golang/parser"
 	"github.com/ugorji/go/codec"
 )
@@ -45,6 +46,10 @@ var expectedFailures = []string{
 	"TestParserAccepts/unicodeDoubleQuotedStringA.dhall",
 	"TestParserAccepts/unionA.dhall",
 	"TestParserAccepts/urlsA.dhall",
+	"TestTypecheckFails/combineMixedRecords.dhall",
+	"TestTypecheckFails/duplicateFields.dhall",
+	"TestTypecheckFails/mixedUnions.dhall",
+	"TestTypecheckFails/preferMixedRecords.dhall",
 }
 
 func pass(t *testing.T) {
@@ -62,7 +67,7 @@ func failf(t *testing.T, format string, args ...interface{}) {
 			return
 		}
 	}
-	t.Errorf(format, args...)
+	t.Fatalf(format, args...)
 }
 
 func expectError(t *testing.T, err error) {
@@ -146,6 +151,37 @@ func TestParserAccepts(t *testing.T) {
 			err = bDec.Decode(&expected)
 			expectNoError(t, err)
 			expectEqual(t, expected, actual)
+		})
+	}
+}
+
+func TestTypecheckFails(t *testing.T) {
+	failuresDir := "./dhall-lang/tests/typecheck/failure/"
+	files, err := ioutil.ReadDir(failuresDir)
+	if err != nil {
+		t.Fatalf("Couldn't read dhall-lang tests: %v\n(Have you pulled submodules?)\n", err)
+	}
+
+	for _, f := range files {
+		t.Run(f.Name(), func(t *testing.T) {
+			reader, openerr := os.Open(failuresDir + f.Name())
+			defer reader.Close()
+			if openerr != nil {
+				t.Fatal(openerr)
+			}
+
+			parsed, err := parser.ParseReader(f.Name(), reader)
+
+			expectNoError(t, err)
+
+			expr, ok := parsed.(ast.Expr)
+			if !ok {
+				failf(t, "Expected ast.Expr, got %+v\n", parsed)
+			}
+
+			_, err = expr.TypeWith(ast.EmptyContext())
+
+			expectError(t, err)
 		})
 	}
 }
