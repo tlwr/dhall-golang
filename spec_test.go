@@ -54,6 +54,7 @@ var expectedFailures = []string{
 }
 
 func pass(t *testing.T) {
+	t.Helper()
 	for _, name := range expectedFailures {
 		if t.Name() == name {
 			t.Error("Expected failure, but actually passed")
@@ -62,6 +63,7 @@ func pass(t *testing.T) {
 }
 
 func failf(t *testing.T, format string, args ...interface{}) {
+	t.Helper()
 	for _, name := range expectedFailures {
 		if t.Name() == name {
 			t.Skipf(format, args...)
@@ -72,18 +74,21 @@ func failf(t *testing.T, format string, args ...interface{}) {
 }
 
 func expectError(t *testing.T, err error) {
+	t.Helper()
 	if err == nil {
 		failf(t, "Expected file to fail to parse, but it parsed successfully")
 	}
 }
 
 func expectNoError(t *testing.T, err error) {
+	t.Helper()
 	if err != nil {
 		failf(t, "Expected file to parse successfully, but got error %v", err)
 	}
 }
 
 func expectEqual(t *testing.T, expected, actual interface{}) {
+	t.Helper()
 	if reflect.DeepEqual(expected, actual) {
 		pass(t)
 	} else {
