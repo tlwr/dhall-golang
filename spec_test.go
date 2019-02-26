@@ -51,6 +51,11 @@ var expectedFailures = []string{
 	"TestTypecheckFails/duplicateFields.dhall",
 	"TestTypecheckFails/mixedUnions.dhall",
 	"TestTypecheckFails/preferMixedRecords.dhall",
+	// FIXME: accessEncodedTypeA parses, so why doesn't it typecheck?
+	"TestTypechecks/accessEncodedTypeA.dhall",
+	"TestTypechecks/accessTypeA.dhall",
+	"TestTypechecks/recordOfRecordOfTypesA.dhall",
+	"TestTypechecks/recordOfTypesA.dhall",
 }
 
 func pass(t *testing.T) {
@@ -76,14 +81,14 @@ func failf(t *testing.T, format string, args ...interface{}) {
 func expectError(t *testing.T, err error) {
 	t.Helper()
 	if err == nil {
-		failf(t, "Expected file to fail to parse, but it parsed successfully")
+		failf(t, "Expected error but found none")
 	}
 }
 
 func expectNoError(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
-		failf(t, "Expected file to parse successfully, but got error %v", err)
+		failf(t, "Got error %v", err)
 	}
 }
 
@@ -181,4 +186,39 @@ func TestTypecheckFails(t *testing.T) {
 
 		expectError(t, err)
 	})
+}
+
+func TestTypechecks(t *testing.T) {
+	// TODO: recurse through dir
+	dir := "./dhall-lang/tests/typecheck/success/"
+	files, err := filepath.Glob(dir + "*A.dhall")
+	if err != nil {
+		t.Fatalf("Couldn't read dhall-lang tests: %v\n(Have you pulled submodules?)\n", err)
+	}
+
+	for _, aName := range files {
+		name := filepath.Base(aName)
+		bName := strings.Replace(aName, "A.dhall", "B.dhall", 1)
+		aReader, err := os.Open(aName)
+		defer aReader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		bReader, err := os.Open(bName)
+		defer bReader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Run(name, func(t *testing.T) {
+			parsedA, err := parser.ParseReader(name, aReader)
+			expectNoError(t, err)
+
+			parsedB, err := parser.ParseReader(name, bReader)
+			expectNoError(t, err)
+
+			typeOfA, err := parsedA.(ast.Expr).TypeWith(ast.EmptyContext())
+			expectNoError(t, err)
+			expectEqual(t, typeOfA, parsedB)
+		})
+	}
 }
