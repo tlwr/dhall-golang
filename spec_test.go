@@ -103,12 +103,12 @@ func expectNoError(t *testing.T, err error) {
 	}
 }
 
-func expectEqual(t *testing.T, expected, actual interface{}) {
+func expectEqualBytes(t *testing.T, expected, actual []byte) {
 	t.Helper()
 	if reflect.DeepEqual(expected, actual) {
 		pass(t)
 	} else {
-		failf(t, "Expected %+v to equal %+v", actual, expected)
+		failf(t, "Expected %x to equal %x", actual, expected)
 	}
 }
 
@@ -194,26 +194,20 @@ func TestParserRejects(t *testing.T) {
 
 func TestParserAccepts(t *testing.T) {
 	var cbor codec.CborHandle
-	var json codec.JsonHandle
 	runTestOnFilePairs(t, "dhall-lang/tests/parser/success/",
-		"A.dhall", "B.json",
+		"A.dhall", "B.dhallb",
 		func(t *testing.T, aReader, bReader io.Reader) {
-			buf := new(bytes.Buffer)
+			actualBuf := new(bytes.Buffer)
 			parsed, err := parser.ParseReader(t.Name(), aReader)
 			expectNoError(t, err)
-			aEnc := codec.NewEncoder(buf, &cbor)
+
+			aEnc := codec.NewEncoder(actualBuf, &cbor)
 			err = aEnc.Encode(parsed)
 			expectNoError(t, err)
-			aDec := codec.NewDecoder(buf, &cbor)
-			var actual interface{}
-			err = aDec.Decode(&actual)
-			expectNoError(t, err)
 
-			bDec := codec.NewDecoder(bReader, &json)
-			var expected interface{}
-			err = bDec.Decode(&expected)
+			expected, err := ioutil.ReadAll(bReader)
 			expectNoError(t, err)
-			expectEqual(t, expected, actual)
+			expectEqualBytes(t, expected, actualBuf.Bytes())
 		})
 }
 
