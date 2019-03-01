@@ -54,14 +54,25 @@ var expectedFailures = []string{
 	// FIXME: accessEncodedTypeA parses, so why doesn't it typecheck?
 	"TestTypechecks/accessEncodedTypeA.dhall",
 	"TestTypechecks/accessTypeA.dhall",
+	"TestTypechecks/prelude",
 	"TestTypechecks/recordOfRecordOfTypesA.dhall",
 	"TestTypechecks/recordOfTypesA.dhall",
+	"TestTypechecks/simple/access",
+	"TestTypechecks/simple/alternativesAreTypesA.dhall",
+	// FIXME: fails because alpha normalization is unimplemented
+	"TestTypechecks/simple/anonymousFunctionsInTypesA.dhall",
+	"TestTypechecks/simple/fieldsAreTypesA.dhall",
+	// FIXME: fails because alpha normalization is unimplemented
+	"TestTypechecks/simple/kindParameterA.dhall",
+	"TestTypechecks/simple/mergeEquivalenceA.dhall",
+	"TestTypechecks/simple/mixedFieldAccessA.dhall",
+	"TestTypechecks/simple/unionsOfTypesA.dhall",
 }
 
 func pass(t *testing.T) {
 	t.Helper()
-	for _, name := range expectedFailures {
-		if t.Name() == name {
+	for _, prefix := range expectedFailures {
+		if strings.HasPrefix(t.Name(), prefix) {
 			t.Error("Expected failure, but actually passed")
 		}
 	}
@@ -69,8 +80,8 @@ func pass(t *testing.T) {
 
 func failf(t *testing.T, format string, args ...interface{}) {
 	t.Helper()
-	for _, name := range expectedFailures {
-		if t.Name() == name {
+	for _, prefix := range expectedFailures {
+		if strings.HasPrefix(t.Name(), prefix) {
 			t.Skipf(format, args...)
 			return
 		}
@@ -101,6 +112,20 @@ func expectEqual(t *testing.T, expected, actual interface{}) {
 	}
 }
 
+func expectEqualExprs(t *testing.T, expected, actual ast.Expr) {
+	t.Helper()
+	if reflect.DeepEqual(expected, actual) {
+		pass(t)
+	} else {
+		buf := new(bytes.Buffer)
+		buf.Write([]byte("Expected "))
+		actual.WriteTo(buf)
+		buf.Write([]byte(" to equal "))
+		expected.WriteTo(buf)
+		failf(t, buf.String())
+	}
+}
+
 func runTestOnEachFile(t *testing.T, dir string, test func(*testing.T, io.Reader)) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -120,38 +145,47 @@ func runTestOnEachFile(t *testing.T, dir string, test func(*testing.T, io.Reader
 	}
 }
 
+func runTestOnFilePair(t *testing.T, name, pathA, pathB string, test func(*testing.T, io.Reader, io.Reader)) {
+	aReader, err := os.Open(pathA)
+	defer aReader.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bReader, err := os.Open(pathB)
+	defer bReader.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run(name, func(t *testing.T) {
+		test(t, aReader, bReader)
+	})
+}
+
 func runTestOnFilePairs(
 	t *testing.T,
-	dir string,
-	suffixA string,
-	suffixB string,
+	dir, suffixA, suffixB string,
 	test func(*testing.T, io.Reader, io.Reader),
 ) {
-	files, err := filepath.Glob(dir + "*" + suffixA)
+	err := filepath.Walk(dir,
+		func(aPath string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if strings.HasSuffix(aPath, suffixA) {
+				bPath := strings.Replace(aPath, suffixA, suffixB, 1)
+				testName := strings.Replace(aPath, dir, "", 1)
+
+				runTestOnFilePair(t, testName, aPath, bPath, test)
+			}
+			return nil
+		})
 	if err != nil {
 		t.Fatalf("Couldn't read dhall-lang tests: %v\n(Have you pulled submodules?)\n", err)
-	}
-
-	for _, aName := range files {
-		bName := strings.Replace(aName, suffixA, suffixB, 1)
-		aReader, err := os.Open(aName)
-		defer aReader.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		bReader, err := os.Open(bName)
-		defer bReader.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Run(filepath.Base(aName), func(t *testing.T) {
-			test(t, aReader, bReader)
-		})
 	}
 }
 
 func TestParserRejects(t *testing.T) {
-	runTestOnEachFile(t, "./dhall-lang/tests/parser/failure/", func(t *testing.T, reader io.Reader) {
+	runTestOnEachFile(t, "dhall-lang/tests/parser/failure/", func(t *testing.T, reader io.Reader) {
 		_, err := parser.ParseReader(t.Name(), reader)
 
 		expectError(t, err)
@@ -161,7 +195,7 @@ func TestParserRejects(t *testing.T) {
 func TestParserAccepts(t *testing.T) {
 	var cbor codec.CborHandle
 	var json codec.JsonHandle
-	runTestOnFilePairs(t, "./dhall-lang/tests/parser/success/",
+	runTestOnFilePairs(t, "dhall-lang/tests/parser/success/",
 		"A.dhall", "B.json",
 		func(t *testing.T, aReader, bReader io.Reader) {
 			buf := new(bytes.Buffer)
@@ -184,7 +218,7 @@ func TestParserAccepts(t *testing.T) {
 }
 
 func TestTypecheckFails(t *testing.T) {
-	runTestOnEachFile(t, "./dhall-lang/tests/typecheck/failure/", func(t *testing.T, reader io.Reader) {
+	runTestOnEachFile(t, "dhall-lang/tests/typecheck/failure/", func(t *testing.T, reader io.Reader) {
 		parsed, err := parser.ParseReader(t.Name(), reader)
 
 		expectNoError(t, err)
@@ -201,8 +235,7 @@ func TestTypecheckFails(t *testing.T) {
 }
 
 func TestTypechecks(t *testing.T) {
-	// TODO: recurse through dir
-	runTestOnFilePairs(t, "./dhall-lang/tests/typecheck/success/",
+	runTestOnFilePairs(t, "dhall-lang/tests/typecheck/success/",
 		"A.dhall", "B.dhall",
 		func(t *testing.T, aReader, bReader io.Reader) {
 			parsedA, err := parser.ParseReader(t.Name(), aReader)
@@ -213,6 +246,6 @@ func TestTypechecks(t *testing.T) {
 
 			typeOfA, err := parsedA.(ast.Expr).TypeWith(ast.EmptyContext())
 			expectNoError(t, err)
-			expectEqual(t, typeOfA, parsedB)
+			expectEqualExprs(t, parsedB.(ast.Expr), typeOfA)
 		})
 }
