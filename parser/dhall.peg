@@ -20,7 +20,7 @@ import "github.com/philandstuff/dhall-golang/ast"
 
 DhallFile ← e:CompleteExpression EOF { return e, nil }
 
-CompleteExpression ← _ e:Expression { return e, nil }
+CompleteExpression ← e:Expression _ { return e, nil }
 
 EOL ← "\n" / "\r\n"
 
@@ -35,13 +35,12 @@ BlockCommentContinue ← "-}" / BlockCommentChunk BlockCommentContinue
 
 NotEOL ← [\t\u0020-\U0010ffff]
 
-LineComment ← "--" content:(NotEOL* { return string(c.text), nil}) EOL { return content, nil }
+LineComment ← "--" content:(NotEOL* { return string(c.text), nil}) EOL
+{ return content, nil }
 
 WhitespaceChunk ← ' ' / '\t' / EOL / LineComment / BlockComment
 
 _ ← WhitespaceChunk*
-
-NonemptyWhitespace ← WhitespaceChunk+
 
 HexDig ← [0-9a-f]i
 
@@ -50,7 +49,7 @@ SimpleLabel ← !KeywordRaw
 
 // QuotedLabel
 
-Label ← label:SimpleLabel _ { return label, nil }
+Label ← _ label:SimpleLabel { return label, nil }
 
 // DoubleQuoteInterpolation ←
 
@@ -110,7 +109,7 @@ DoubleQuoteLiteral ← '"' chunks:DoubleQuoteChunk* '"' {
     return ast.TextLit{Chunks: outChunks, Suffix: str.String()}, nil
 }
 
-TextLiteral ← t:DoubleQuoteLiteral _ { return t, nil }
+TextLiteral ← _ t:DoubleQuoteLiteral { return t, nil }
 
 ReservedRaw ← "Bool" { return ast.Bool, nil }
   / "Optional"
@@ -128,7 +127,7 @@ ReservedRaw ← "Bool" { return ast.Bool, nil }
   / "Kind" { return ast.Kind, nil }
   / "Sort" { return ast.Sort, nil }
 
-Reserved ← r:ReservedRaw _ { return r, nil }
+Reserved ← _ r:ReservedRaw { return r, nil }
 
 KeywordRaw ← "if"
   / "then"
@@ -141,36 +140,36 @@ KeywordRaw ← "if"
   / "constructors"
   / "Some"
 
-If ← "if" NonemptyWhitespace
-Then ← "then" NonemptyWhitespace
-Else ← "else" NonemptyWhitespace
-Let ← "let" NonemptyWhitespace
-In ← "in" NonemptyWhitespace
-As ← "as" NonemptyWhitespace
-Using ← "using" NonemptyWhitespace
-Merge ← "merge" NonemptyWhitespace
-Some ← "Some" NonemptyWhitespace
-Optional ← "Optional" _
-Text ← "Text" _
-List ← "List" _
+If ← _ "if" WhitespaceChunk
+Then ← _ "then" WhitespaceChunk
+Else ← _ "else" WhitespaceChunk
+Let ← _ "let" WhitespaceChunk
+In ← _ "in" WhitespaceChunk
+As ← _ "as" WhitespaceChunk
+Using ← _ "using" WhitespaceChunk
+Merge ← _ "merge" WhitespaceChunk
+Some ← _ "Some" WhitespaceChunk
+Optional ← _ "Optional"
+Text ← _ "Text"
+List ← _ "List"
 
-Equal ← '=' _
-Plus ← '+' NonemptyWhitespace
-Times ← '*' _
-Dot ← '.' _
-OpenBrace ← '{' _
-CloseBrace ← '}' _
-OpenBracket ← '[' _
-CloseBracket ← ']' _
-Comma ← ',' _
-OpenParens ← '(' _
-CloseParens ← ')' _
-At ← '@' _
-Colon ← ':' NonemptyWhitespace
+Equal ← _ '='
+Plus ← _ '+' WhitespaceChunk
+Times ← _ '*'
+Dot ← _ '.'
+OpenBrace ← _ '{'
+CloseBrace ← _ '}'
+OpenBracket ← _ '['
+CloseBracket ← _ ']'
+Comma ← _ ','
+OpenParens ← _ '('
+CloseParens ← _ ')'
+At ← _ '@'
+Colon ← _ ':' WhitespaceChunk
 
-Lambda ← ('\\' / 'λ') _
-Forall ← ("forall" / '∀') _
-Arrow ← ("->" / '→') _
+Lambda ← _ ('\\' / 'λ')
+Forall ← _ ("forall" / '∀')
+Arrow ← _ ("->" / '→')
 
 Exponent ← "e"i [+-]? [0-9]+
 
@@ -182,14 +181,14 @@ DoubleLiteralRaw ← [+-]? [0-9]+ ( "." [0-9]+ Exponent? / Exponent) {
       return ast.DoubleLit(d), nil
 }
 
-DoubleLiteral ← d:DoubleLiteralRaw _ { return d, nil }
+DoubleLiteral ← _ d:DoubleLiteralRaw { return d, nil }
 
 NaturalLiteralRaw ← [0-9]+ {
       i, err := strconv.Atoi(string(c.text))
       return ast.NaturalLit(i), err
 }
 
-NaturalLiteral ← n:NaturalLiteralRaw _ { return n, nil }
+NaturalLiteral ← _ n:NaturalLiteralRaw { return n, nil }
 
 IntegerLiteralRaw ← [+-][0-9]+ {
       i, err := strconv.Atoi(string(c.text))
@@ -199,7 +198,7 @@ IntegerLiteralRaw ← [+-][0-9]+ {
       return ast.IntegerLit(i), nil
 }
 
-IntegerLiteral ← i: IntegerLiteralRaw _ { return i, nil }
+IntegerLiteral ← _ i:IntegerLiteralRaw { return i, nil }
 
 DeBruijn ← At index:NaturalLiteral { return int(index.(ast.NaturalLit)), nil }
 
@@ -212,7 +211,7 @@ Identifier ← name:Label index:DeBruijn? {
 }
 
 IdentifierReservedPrefix ←
-         name:(ReservedRaw [A-Za-z0-9/_-]+ { return string(c.text),nil }) _
+         _ name:(ReservedRaw [A-Za-z0-9/_-]+ { return string(c.text),nil })
          index:DeBruijn? {
     if index != nil {
         return ast.Var{Name:name.(string), Index:index.(int)}, nil
@@ -299,7 +298,8 @@ TimesExpression ←
           return a, nil
       }
 
-ApplicationExpression ← f:ImportExpression rest:ImportExpression* {
+MoreApp ← WhitespaceChunk e:ImportExpression { return e, nil }
+ApplicationExpression ← f:ImportExpression rest:MoreApp* {
           e := f.(ast.Expr)
           if rest == nil { return e, nil }
           for _, arg := range rest.([]interface{}) {
